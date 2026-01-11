@@ -1,3 +1,7 @@
 .DS_Store
 __pycache__/
 *.pyc
+2/.venv/
+2/models/
+2/news.txt
+2/nlp-2025/

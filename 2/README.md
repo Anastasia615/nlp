@@ -51,6 +51,21 @@ python3 mygrep.py news.txt "движение" --model models/news.model --fields
 По умолчанию выводится только предложение; полный текст строки — `--full-line`.
 В конце предложения печатается `(совпадение: ...)` или `(синоним: ...)`.
 
+## Пример
+
+Команда:
+
+```bash
+python3 mygrep.py news.txt "движение" --model models/news.model --only-synonyms --lexicon
+```
+
+Пример вывода:
+
+```
+передвижение
+перемещение
+```
+
 ## Синонимы
 
 - Word2Vec дает кандидатов (`--topn`, `--threshold`, `--mutual-topn`), по умолчанию `100 / 0.3 / 0`.

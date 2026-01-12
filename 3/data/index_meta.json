@@ -1,0 +1,190 @@
+{
+  "config": {
+    "model": "sentence-transformers/all-MiniLM-L6-v2",
+    "metric": "cosine",
+    "normalize": true,
+    "documents": 30
+  },
+  "documents": [
+    {
+      "id": "doc-001",
+      "title": "Artificial intelligence",
+      "text": "Artificial intelligence is a field of computer science that builds systems capable of tasks that usually require human intelligence. It includes reasoning, perception, learning, and decision making. Modern AI is driven by data and statistical models.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-002",
+      "title": "Machine learning",
+      "text": "Machine learning is a subset of AI focused on algorithms that improve with experience. Supervised learning uses labeled data, while unsupervised learning finds structure. Models are evaluated by generalization to unseen data.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-003",
+      "title": "Neural network",
+      "text": "A neural network is a model inspired by biological neurons. It consists of layers of interconnected units with learned weights. Deep networks can approximate complex functions.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-004",
+      "title": "Transformer (machine learning)",
+      "text": "The transformer is a neural architecture based on self attention. It processes sequences in parallel and captures long range dependencies. It became the foundation of many NLP models.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-005",
+      "title": "Natural language processing",
+      "text": "Natural language processing studies how computers analyze and generate human language. Tasks include tokenization, parsing, translation, and question answering. Modern systems use embeddings and neural networks.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-006",
+      "title": "Information retrieval",
+      "text": "Information retrieval is the study of searching for relevant documents. Classic systems use inverted indexes and ranking functions like BM25. Vector retrieval uses semantic embeddings and nearest neighbor search.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-007",
+      "title": "Python (programming language)",
+      "text": "Python is a high level programming language known for readability. It has a large standard library and a vibrant ecosystem. It is widely used in data science and web development.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-008",
+      "title": "Linux",
+      "text": "Linux is a family of open source operating systems based on the Linux kernel. It powers servers, embedded devices, and desktops. Distributions package the kernel with tools and software.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-009",
+      "title": "Internet",
+      "text": "The Internet is a global network of interconnected computer networks. It uses the TCP/IP protocol suite for communication. The World Wide Web is a popular service built on top of the Internet.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-010",
+      "title": "Mars",
+      "text": "Mars is the fourth planet from the Sun and is often called the red planet. It has a thin atmosphere and surface features like volcanoes and valleys. Robotic missions have explored its geology.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-011",
+      "title": "Solar System",
+      "text": "The Solar System includes the Sun and objects bound by its gravity. It contains eight planets, dwarf planets, moons, asteroids, and comets. The Kuiper belt and Oort cloud are distant regions.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-012",
+      "title": "Climate change",
+      "text": "Climate change refers to long term shifts in temperature and weather patterns. Human activities, especially greenhouse gas emissions, are a major driver of recent warming. Impacts include sea level rise and extreme events.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-013",
+      "title": "Renewable energy",
+      "text": "Renewable energy comes from sources that are naturally replenished, such as wind, solar, and hydro. It can reduce reliance on fossil fuels. Integration requires storage and grid management.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-014",
+      "title": "Photosynthesis",
+      "text": "Photosynthesis is the process by which plants, algae, and some bacteria convert light energy into chemical energy. It uses carbon dioxide and water to produce sugars and oxygen. Chlorophyll plays a key role.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-015",
+      "title": "Genome",
+      "text": "A genome is the complete set of genetic material in an organism. It includes genes and non coding regions. Advances in sequencing enable large scale genomic analysis.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-016",
+      "title": "CRISPR",
+      "text": "CRISPR is a gene editing technology that uses a guide RNA and a nuclease to cut DNA at specific sites. It enables targeted modifications in cells. Ethical and safety issues are actively discussed.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-017",
+      "title": "Vaccination",
+      "text": "Vaccination stimulates the immune system to provide protection against disease. Vaccines can be live attenuated, inactivated, or based on subunits. Widespread vaccination improves public health.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-018",
+      "title": "COVID-19 pandemic",
+      "text": "The COVID-19 pandemic is a global outbreak of disease caused by the SARS-CoV-2 virus. It led to public health measures and rapid vaccine development. The pandemic affected economies and social life.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-019",
+      "title": "World War II",
+      "text": "World War II was a global conflict from 1939 to 1945 involving many nations. It included major theaters in Europe and the Pacific. The war ended with the defeat of the Axis powers.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-020",
+      "title": "Quantum mechanics",
+      "text": "Quantum mechanics is a fundamental theory in physics describing matter and energy at small scales. It introduces concepts like wave particle duality and quantization. Measurements are probabilistic.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-021",
+      "title": "Relativity",
+      "text": "Relativity includes the special and general theories developed by Albert Einstein. Special relativity links space and time and sets the speed of light as a constant. General relativity describes gravity as curvature of spacetime.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-022",
+      "title": "Graph theory",
+      "text": "Graph theory studies structures made of vertices and edges. It models networks such as social graphs and transportation systems. Problems include shortest paths and connectivity.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-023",
+      "title": "Blockchain",
+      "text": "A blockchain is a distributed ledger made of linked blocks of transactions. It uses cryptographic hashes to ensure integrity. Consensus mechanisms coordinate updates across participants.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-024",
+      "title": "Cryptography",
+      "text": "Cryptography protects information through techniques such as encryption and digital signatures. Symmetric and asymmetric methods address different use cases. Security depends on algorithms and key management.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-025",
+      "title": "Amazon rainforest",
+      "text": "The Amazon rainforest is a vast tropical forest in South America. It is known for high biodiversity and important climate regulation. Deforestation threatens ecosystems and indigenous communities.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-026",
+      "title": "Ocean currents",
+      "text": "Ocean currents are large scale movements of seawater driven by wind, temperature, salinity, and Earth rotation. They influence climate and marine ecosystems. Currents transport heat across the globe.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-027",
+      "title": "Economic inflation",
+      "text": "Inflation is the general increase in prices over time. It reduces purchasing power and is influenced by demand, supply, and monetary policy. Central banks often target low stable inflation.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-028",
+      "title": "Supply chain",
+      "text": "A supply chain is the network of organizations and processes that move products from raw materials to customers. It includes sourcing, manufacturing, logistics, and distribution. Resilience depends on diversification and visibility.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-029",
+      "title": "Mount Everest",
+      "text": "Mount Everest is the highest mountain above sea level, located in the Himalayas. Its summit is on the border between Nepal and China. Climbing requires acclimatization and technical skill.",
+      "source": "wikipedia"
+    },
+    {
+      "id": "doc-030",
+      "title": "Space telescope",
+      "text": "A space telescope is an instrument placed in orbit to observe astronomical objects without atmospheric distortion. Examples include the Hubble Space Telescope and the James Webb Space Telescope. They enable deep space observations.",
+      "source": "wikipedia"
+    }
+  ]
+}

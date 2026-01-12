@@ -322,8 +322,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("file", help="Path to a text file (.txt or .gz).")
     parser.add_argument("query", help="Query word or words.")
     parser.add_argument("--model", default=str(default_model))
-    parser.add_argument("--topn", type=int, default=10)
-    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--topn", type=int, default=100)
+    parser.add_argument("--threshold", type=float, default=0.3)
     parser.add_argument("--encoding", default="utf-8")
     parser.add_argument(
         "--show-terms",
@@ -380,13 +380,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-freq",
         type=int,
-        default=10,
+        default=1,
         help="Minimum token frequency to allow synonym expansion.",
     )
     parser.add_argument(
         "--mutual-topn",
         type=int,
-        default=20,
+        default=0,
         help="Keep only mutually similar words (0 = disable).",
     )
     parser.add_argument(

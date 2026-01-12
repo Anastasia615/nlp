@@ -13,56 +13,10 @@ def tokenize(text: str) -> list[str]:
     return [token for token in WORD_RE.findall(text.lower()) if token.isalpha()]
 
 
-def load_morph(use_lemma: bool):
-    if not use_lemma:
-        return None
-    last_exc = None
-    for lib_name in ("pymorphy3", "pymorphy2"):
-        try:
-            module = __import__(lib_name)
-        except Exception as exc:
-            last_exc = exc
-            continue
-        try:
-            return module.MorphAnalyzer()
-        except Exception as exc:
-            last_exc = exc
-            continue
-    print(
-        f"Lemmatization disabled: failed to initialize pymorphy2/pymorphy3: {last_exc}",
-        file=sys.stderr,
-    )
-    return None
-
-
 class NewsCorpus:
-    def __init__(self, path: Path, encoding: str, morph, use_lemma: bool) -> None:
+    def __init__(self, path: Path, encoding: str) -> None:
         self.path = path
         self.encoding = encoding
-        self.morph = morph if use_lemma else None
-        self.use_lemma = use_lemma and morph is not None
-        self.lemma_cache = {} if self.use_lemma else None
-
-    def lemmatize(self, token: str) -> str:
-        cache = self.lemma_cache
-        if cache is not None:
-            cached = cache.get(token)
-            if cached is not None:
-                return cached
-        try:
-            parses = self.morph.parse(token)
-        except Exception:
-            lemma = token
-        else:
-            lemma = parses[0].normal_form if parses else token
-        if cache is not None:
-            cache[token] = lemma
-        return lemma
-
-    def normalize_tokens(self, tokens: list[str]) -> list[str]:
-        if not self.use_lemma:
-            return tokens
-        return [self.lemmatize(token) for token in tokens]
 
     def __iter__(self):
         opener = gzip.open if self.path.suffix == ".gz" else open
@@ -78,7 +32,7 @@ class NewsCorpus:
                     text = f"{parts[0]} {parts[1]}"
                 else:
                     text = parts[0]
-                tokens = self.normalize_tokens(tokenize(text))
+                tokens = tokenize(text)
                 if tokens:
                     yield tokens
 
@@ -127,12 +81,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--encoding", default="utf-8")
-    parser.add_argument(
-        "--no-lemma",
-        action="store_false",
-        dest="use_lemma",
-        help="Disable lemmatization.",
-    )
     return parser.parse_args()
 
 
@@ -152,8 +100,7 @@ def main() -> int:
         print(f"Failed to import gensim: {exc}", file=sys.stderr)
         return 1
 
-    morph = load_morph(args.use_lemma)
-    sentences = NewsCorpus(corpus_path, args.encoding, morph, args.use_lemma)
+    sentences = NewsCorpus(corpus_path, args.encoding)
     try:
         model = Word2Vec(
             sentences=sentences,

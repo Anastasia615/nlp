@@ -1,20 +1,13 @@
 # Семантический grep (вариант 2)
 
-Утилита ищет строки в текстовом файле не только по точному слову, но и по словам, близким по смыслу, используя Word2Vec.
+Утилита ищет строки или предложения по слову и его синонимам. Синонимы берутся из Word2Vec; опционально можно включить фильтр по RuWordNet.
 
 ## Файлы
 
-- `train_word2vec.py` — обучение модели Word2Vec на корпусе новостей.
-- `mygrep.py` — поиск строк с учетом синонимов.
+- `train_word2vec.py` — обучение модели Word2Vec.
+- `mygrep.py` — поиск по файлу с учетом синонимов.
 
-## Зависимости
-
-- Python 3.10+
-- `gensim` (и совместимый `numpy`)
-- `pymorphy2` или `pymorphy3` (опционально, для лемматизации)
-- `ruwordnet` (опционально, для словарных синонимов)
-
-Минимальная установка:
+## Установка
 
 ```bash
 python3 -m venv .venv
@@ -22,104 +15,65 @@ source .venv/bin/activate
 pip install gensim numpy
 ```
 
-Для словарных синонимов (RuWordNet):
+Дополнительно для словаря:
 
 ```bash
 pip install ruwordnet
 ruwordnet download
 ```
 
-## Обучение модели
-
-По умолчанию скрипт ищет корпус в `nlp-2025/data/news.txt.gz` и сохраняет модель в `models/word2vec.model`.
-Если установлен `pymorphy2` или `pymorphy3`, токены лемматизируются перед обучением.
+Если нужен учет форм слова для словаря:
 
 ```bash
-python3 train_word2vec.py
+pip install pymorphy3
 ```
+
+## Обучение модели
+
+```bash
+python3 train_word2vec.py --corpus news.txt --model models/news.model
+```
+
+По умолчанию: `nlp-2025/data/news.txt.gz` -> `models/word2vec.model`.
 
 ## Поиск
 
 ```bash
-python3 mygrep.py data.txt "привет" --model models/news.model --topn 10 --threshold 0.55 --show-terms
+python3 mygrep.py news.txt "движение" --model models/news.model --sentence --max-len 160
 ```
 
-Вывод всегда идет нумерованным списком.
-
-Если файл в формате `категория<TAB>заголовок<TAB>текст`, можно выводить только нужные части:
+Если файл в формате `категория<TAB>заголовок<TAB>текст`:
 
 ```bash
-python3 mygrep.py data.txt "привет" --model models/news.model --fields category_headline
-python3 mygrep.py data.txt "привет" --model models/news.model --fields text --max-len 160
+python3 mygrep.py news.txt "движение" --model models/news.model --fields text
 ```
 
-Если нужно выводить только предложение, где встречается слово:
+По умолчанию выводится только предложение; полный текст строки — `--full-line`.
+В конце предложения печатается `(совпадение: ...)` или `(синоним: ...)`.
+
+## Синонимы
+
+- Word2Vec дает кандидатов (`--topn`, `--threshold`, `--mutual-topn`).
+- `--lexicon` включает RuWordNet; синонимы = пересечение Word2Vec и RuWordNet.
+- Если установлен `pymorphy3`, словарь работает по леммам: формы одной леммы считаются точным совпадением, а синонимами — только другие леммы.
+
+Показать только синонимы:
 
 ```bash
-python3 mygrep.py data.txt "привет" --model models/news.model --sentence
-python3 mygrep.py data.txt "привет" --model models/news.model --sentence --max-len 160
+python3 mygrep.py news.txt "движение" --model models/news.model --only-synonyms
+python3 mygrep.py news.txt "движение" --model models/news.model --only-synonyms --lexicon
 ```
 
-В режиме `--sentence` в конце каждого предложения показывается слово,
-которое сработало как синоним (или точное совпадение).
+## Полезные параметры
 
-Вывести только список синонимов:
+- `--min-freq` — не расширять редкие слова (по умолчанию 10).
+- `--threshold` — минимум похожести; ниже = больше слов.
+- `--mutual-topn` — взаимность; `0` отключает.
+- `--context-*` — контекстная проверка «подстановочной адекватности».
+- `--cross-script` — разрешить синонимы в другой письменности.
+- `--exact` — искать только точные совпадения без модели.
 
-```bash
-python3 mygrep.py data.txt "движение" --model models/news.model --only-synonyms
-```
+## Примечания
 
-Для проверки «подстановочной адекватности» используется контекстное
-согласование на Word2Vec (без контекстных моделей). Фильтр можно настроить:
-
-```bash
-python3 mygrep.py data.txt "движение" --model models/news.model --sentence \
-  --context-window 5 --context-threshold 0.3 --context-source-threshold 0.2 \
-  --context-delta 0.3 --context-min-tokens 2
-```
-
-По умолчанию синонимы берутся только из той же письменности, что и запрос
-(например, для «спорт» будут отфильтрованы латиница и доменные части вроде `ua`).
-Если это ограничение мешает, добавьте `--cross-script`.
-
-По умолчанию используется лемматизация (требуется `pymorphy2` или `pymorphy3`).
-Если библиотека не установлена, лемматизация автоматически выключится с предупреждением.
-Отключить вручную можно так:
-
-```bash
-python3 mygrep.py data.txt "привет" --model models/news.model --no-lemma
-```
-
-Для словарных синонимов используется RuWordNet. Отключить можно так:
-
-```bash
-python3 mygrep.py data.txt "привет" --model models/news.model --no-lexicon
-```
-
-Для редких слов эмбеддинг нестабилен, поэтому по умолчанию синонимы
-не расширяются, если слово встречалось в корпусе меньше 10 раз. Это можно изменить:
-
-```bash
-python3 mygrep.py data.txt "привет" --model models/news.model --min-freq 1
-```
-
-По умолчанию используется «взаимная близость»: слово считается синонимом,
-только если запрос входит в топ похожих слов для кандидата. Отключить можно так:
-
-```bash
-python3 mygrep.py data.txt "привет" --model models/news.model --mutual-topn 0
-```
-
-Если нужно искать только точные совпадения (без модели):
-
-```bash
-python3 mygrep.py data.txt "привет" --exact
-```
-
-## Поведение
-
-- Поиск идет по токенам (регистр не учитывается).
-- При наличии `pymorphy2`/`pymorphy3` сравнение идет по леммам.
-- Если слово отсутствует в словаре (OOV) или синонимы не найдены, остается только точное совпадение.
+- Если синонимы не найдены, поиск идет по точному слову.
 - Поддерживаются файлы `.gz`.
-- Ошибки чтения файла и загрузки модели выводятся в `stderr`.

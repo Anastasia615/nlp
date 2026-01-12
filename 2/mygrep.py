@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from functools import lru_cache
 import gzip
 from pathlib import Path
 import re
@@ -48,28 +49,6 @@ def script_type(token: str) -> str:
     return "other"
 
 
-def load_morph(use_morph: bool):
-    if not use_morph:
-        return None
-    last_exc = None
-    for lib_name in ("pymorphy3", "pymorphy2"):
-        try:
-            module = __import__(lib_name)
-        except Exception as exc:
-            last_exc = exc
-            continue
-        try:
-            return module.MorphAnalyzer()
-        except Exception as exc:
-            last_exc = exc
-            continue
-    print(
-        f"Lemmatization disabled: failed to initialize pymorphy2/pymorphy3: {last_exc}",
-        file=sys.stderr,
-    )
-    return None
-
-
 def load_lexicon(use_lexicon: bool):
     if not use_lexicon:
         return None
@@ -89,6 +68,39 @@ def load_lexicon(use_lexicon: bool):
     except Exception as exc:
         print(f"Lexicon disabled: failed to initialize RuWordNet: {exc}", file=sys.stderr)
         return None
+
+
+def load_morph(use_morph: bool):
+    if not use_morph:
+        return None
+    try:
+        import pymorphy3
+    except Exception as exc:
+        print(f"Lemmatization disabled: failed to import pymorphy3: {exc}", file=sys.stderr)
+        return None
+    try:
+        return pymorphy3.MorphAnalyzer()
+    except Exception as exc:
+        print(f"Lemmatization disabled: failed to initialize pymorphy3: {exc}", file=sys.stderr)
+        return None
+
+
+def make_lemmatizer(morph):
+    if morph is None:
+        return lambda token: token
+
+    @lru_cache(maxsize=200000)
+    def lemmatize(token: str) -> str:
+        if not token:
+            return token
+        if script_type(token) != "cyrillic":
+            return token
+        try:
+            return morph.parse(token)[0].normal_form
+        except Exception:
+            return token
+
+    return lemmatize
 
 
 def lexicon_synonyms(tokens: set[str], lexicon, allow_cross_script: bool, max_per_token: int) -> set[str]:
@@ -118,26 +130,8 @@ def lexicon_synonyms(tokens: set[str], lexicon, allow_cross_script: bool, max_pe
     return synonyms
 
 
-def lemmatize(token: str, morph) -> str:
-    if morph is None:
-        return token
-    try:
-        parses = morph.parse(token)
-    except Exception:
-        return token
-    if not parses:
-        return token
-    return parses[0].normal_form
-
-
-def normalize_tokens(tokens: list[str], morph, use_lemma: bool) -> list[str]:
-    if not use_lemma or morph is None:
-        return tokens
-    return [lemmatize(token, morph) for token in tokens]
-
-
-def token_set(text: str, morph, use_lemma: bool) -> set[str]:
-    return set(normalize_tokens(tokenize(text), morph, use_lemma))
+def token_set(text: str) -> set[str]:
+    return set(tokenize(text))
 
 
 def iter_alpha_tokens(text: str):
@@ -147,13 +141,13 @@ def iter_alpha_tokens(text: str):
             yield token
 
 
-def sentence_tokens(text: str, morph, use_lemma: bool):
-    items = []
+def sentence_tokens(text: str, lemmatize=None):
+    pairs = []
     for token in iter_alpha_tokens(text):
-        lower = token.lower()
-        lemma = lemmatize(lower, morph) if use_lemma and morph is not None else lower
-        items.append((token, lemma))
-    return items
+        normalized = token.lower()
+        lemma = lemmatize(normalized) if lemmatize else normalized
+        pairs.append((token, normalized, lemma))
+    return pairs
 
 
 def cosine_similarity(vec1, vec2) -> float:
@@ -163,92 +157,107 @@ def cosine_similarity(vec1, vec2) -> float:
     return float(np.dot(vec1, vec2) / denom)
 
 
-def context_vector(model, lemmas: list[str], index: int, window: int, min_tokens: int):
+def vector_key(model, token: str, lemma: str):
+    if model is None:
+        return None
+    if token in model.wv:
+        return token
+    if lemma and lemma in model.wv:
+        return lemma
+    return None
+
+
+def context_vector(model, tokens: list[str], lemmas: list[str], index: int, window: int, min_tokens: int):
     if model is None or window <= 0:
         return None
     start = max(0, index - window)
-    end = min(len(lemmas), index + window + 1)
+    end = min(len(tokens), index + window + 1)
     vecs = []
     for idx in range(start, end):
         if idx == index:
             continue
-        lemma = lemmas[idx]
-        if lemma in model.wv:
-            vecs.append(model.wv[lemma])
+        token = tokens[idx]
+        lemma = lemmas[idx] if lemmas else token
+        key = vector_key(model, token, lemma)
+        if key:
+            vecs.append(model.wv[key])
     if len(vecs) < min_tokens:
         return None
     return np.mean(vecs, axis=0)
 
 
-def similarity_to_context(model, word: str, context_vec):
+def similarity_to_context(model, word: str, lemma: str, context_vec):
     if model is None or context_vec is None:
         return None
-    if word not in model.wv:
+    key = vector_key(model, word, lemma)
+    if key is None:
         return None
-    return cosine_similarity(model.wv[word], context_vec)
+    return cosine_similarity(model.wv[key], context_vec)
 
 
 def find_match_token(
     text: str,
-    terms: set[str],
-    synonyms: set[str],
+    query_terms: set[str],
+    synonym_forms: set[str],
+    synonym_lemmas: set[str],
+    exact_lemmas: set[str],
     synonym_sources,
-    lexicon_synonyms,
-    morph,
-    use_lemma: bool,
     model,
     context_window: int,
     context_threshold: float,
     context_source_threshold: float,
     context_delta: float,
     context_min_tokens: int,
+    lemmatize,
 ):
-    items = sentence_tokens(text, morph, use_lemma)
-    if not items:
+    token_pairs = sentence_tokens(text, lemmatize)
+    if not token_pairs:
         return None
-    lemmas = [lemma for _, lemma in items]
+    normalized_tokens = [normalized for _, normalized, _ in token_pairs]
+    lemmas = [lemma for _, _, lemma in token_pairs]
     first_exact = None
     first_syn = None
-    for idx, (token, lemma) in enumerate(items):
-        if lemma not in terms:
-            continue
-        if lemma in synonyms:
-            if lemma in lexicon_synonyms:
-                if first_syn is None:
-                    first_syn = token
-                continue
-            context_vec = context_vector(
-                model,
-                lemmas,
-                idx,
-                context_window,
-                context_min_tokens,
-            )
-            if context_vec is None:
-                if first_syn is None:
-                    first_syn = token
-                continue
-            score = similarity_to_context(model, lemma, context_vec)
-            if score is None or score < context_threshold:
-                continue
-            sources = synonym_sources.get(lemma, set())
-            if sources:
-                best_source = None
-                for source in sources:
-                    source_score = similarity_to_context(model, source, context_vec)
-                    if source_score is None:
-                        continue
-                    if best_source is None or source_score > best_source:
-                        best_source = source_score
-                if best_source is None or best_source < context_source_threshold:
-                    continue
-                if score - best_source > context_delta:
-                    continue
-            if first_syn is None:
-                first_syn = token
-        else:
+    for idx, (raw_token, normalized, lemma) in enumerate(token_pairs):
+        is_exact = normalized in query_terms or (exact_lemmas and lemma in exact_lemmas)
+        if is_exact:
             if first_exact is None:
-                first_exact = token
+                first_exact = raw_token
+            continue
+        is_syn = normalized in synonym_forms or (synonym_lemmas and lemma in synonym_lemmas)
+        if not is_syn:
+            continue
+        context_vec = context_vector(
+            model,
+            normalized_tokens,
+            lemmas,
+            idx,
+            context_window,
+            context_min_tokens,
+        )
+        if context_vec is None:
+            if first_syn is None:
+                first_syn = raw_token
+            continue
+        score = similarity_to_context(model, normalized, lemma, context_vec)
+        if score is None or score < context_threshold:
+            continue
+        key = lemma if synonym_lemmas and lemma in synonym_lemmas else normalized
+        sources = synonym_sources.get(key, set())
+        if sources:
+            best_source = None
+            for source in sources:
+                source_lemma = lemmatize(source) if lemmatize else source
+                source_score = similarity_to_context(model, source, source_lemma, context_vec)
+                if source_score is None:
+                    continue
+                if best_source is None or source_score > best_source:
+                    best_source = source_score
+            if best_source is None or best_source < context_source_threshold:
+                continue
+            if score - best_source > context_delta:
+                continue
+        if first_syn is None:
+            first_syn = raw_token
     if first_syn is not None:
         return first_syn, True
     if first_exact is not None:
@@ -327,16 +336,10 @@ def parse_args() -> argparse.Namespace:
         help="Allow expanded terms in other scripts (e.g., Latin for Cyrillic query).",
     )
     parser.add_argument(
-        "--no-lemma",
-        action="store_false",
-        dest="use_lemma",
-        help="Disable lemmatization for matching.",
-    )
-    parser.add_argument(
-        "--no-lexicon",
-        action="store_false",
+        "--lexicon",
+        action="store_true",
         dest="use_lexicon",
-        help="Disable WordNet-based synonyms.",
+        help="Enable RuWordNet-based synonyms.",
     )
     parser.add_argument(
         "--lexicon-max",
@@ -401,7 +404,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sentence",
         action="store_true",
+        dest="sentence",
         help="Print only sentence(s) containing the query terms.",
+    )
+    parser.add_argument(
+        "--full-line",
+        action="store_false",
+        dest="sentence",
+        help="Print full matching lines instead of sentences.",
     )
     parser.add_argument(
         "--only-synonyms",
@@ -413,6 +423,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Search only exact tokens without loading a model.",
     )
+    parser.set_defaults(sentence=True)
     return parser.parse_args()
 
 
@@ -447,18 +458,18 @@ def truncate(text: str, max_len: int) -> str:
 
 def sentences_with_terms(
     text: str,
-    terms: set[str],
-    synonyms: set[str],
+    query_terms: set[str],
+    synonym_forms: set[str],
+    synonym_lemmas: set[str],
+    exact_lemmas: set[str],
     synonym_sources,
-    lexicon_synonyms,
-    morph,
-    use_lemma: bool,
     model,
     context_window: int,
     context_threshold: float,
     context_source_threshold: float,
     context_delta: float,
     context_min_tokens: int,
+    lemmatize,
 ):
     sentences = [part.strip() for part in SENTENCE_RE.split(text) if part.strip()]
     if not sentences:
@@ -467,18 +478,18 @@ def sentences_with_terms(
     for sentence in sentences:
         match = find_match_token(
             sentence,
-            terms,
-            synonyms,
+            query_terms,
+            synonym_forms,
+            synonym_lemmas,
+            exact_lemmas,
             synonym_sources,
-            lexicon_synonyms,
-            morph,
-            use_lemma,
             model,
             context_window,
             context_threshold,
             context_source_threshold,
             context_delta,
             context_min_tokens,
+            lemmatize,
         )
         if match:
             matches.append((sentence, match[0], match[1]))
@@ -526,31 +537,31 @@ def main() -> int:
         print("Cannot use --only-synonyms with --exact.", file=sys.stderr)
         return 1
 
-    morph = load_morph(args.use_lemma)
     wn = load_lexicon(args.use_lexicon)
-    query_terms = set(normalize_tokens(tokens, morph, args.use_lemma))
-    lexicon_terms = set(
-        normalize_tokens(
-            list(lexicon_synonyms(query_terms, wn, args.cross_script, args.lexicon_max)),
-            morph,
-            args.use_lemma,
+    lexicon_active = args.use_lexicon and wn is not None
+    morph = load_morph(args.use_lexicon)
+    lemmatize = make_lemmatizer(morph)
+    lemma_enabled = lexicon_active and morph is not None
+    query_terms = set(tokens)
+    query_lemmas = {lemmatize(token) for token in tokens} if lemma_enabled else set()
+    lexicon_terms = set()
+    if lexicon_active:
+        lexicon_seed = query_lemmas if lemma_enabled else query_terms
+        lexicon_terms = set(
+            lexicon_synonyms(lexicon_seed, wn, args.cross_script, args.lexicon_max)
         )
-    )
 
     model = None
     synonym_sources = {}
+    w2v_candidates = set()
     if not args.exact:
         seed_tokens = list(tokens)
-        if args.use_lemma and morph is not None:
-            for lemma in normalize_tokens(tokens, morph, True):
-                if lemma not in seed_tokens:
-                    seed_tokens.append(lemma)
         try:
             model = load_model(Path(args.model))
         except RuntimeError as exc:
             print(str(exc), file=sys.stderr)
             return 1
-        terms, oov, rare, synonym_pairs = expand_terms(
+        _, oov, rare, synonym_pairs = expand_terms(
             model,
             seed_tokens,
             args.topn,
@@ -559,43 +570,84 @@ def main() -> int:
             args.min_freq,
             args.mutual_topn,
         )
-        terms = set(normalize_tokens(list(terms), morph, args.use_lemma))
         normalized_pairs = []
         for source, syn in synonym_pairs:
-            source_norm = lemmatize(source, morph) if args.use_lemma and morph is not None else source
-            syn_norm = lemmatize(syn, morph) if args.use_lemma and morph is not None else syn
-            if source_norm and syn_norm and source_norm != syn_norm:
-                normalized_pairs.append((source_norm, syn_norm))
+            if source and syn and source != syn:
+                normalized_pairs.append((source, syn))
         synonym_sources = {}
         for source_norm, syn_norm in normalized_pairs:
-            synonym_sources.setdefault(syn_norm, set()).add(source_norm)
+            w2v_candidates.add(syn_norm)
+            key = lemmatize(syn_norm) if lemma_enabled else syn_norm
+            synonym_sources.setdefault(key, set()).add(source_norm)
     else:
-        terms = set(query_terms)
         rare = []
         oov = []
 
-    synonyms = set(synonym_sources.keys())
-    terms |= lexicon_terms
-    synonyms |= lexicon_terms
+    synonym_forms = set()
+    synonym_lemmas = set()
+    if lexicon_active:
+        if lemma_enabled:
+            candidate_lemmas = {lemmatize(word) for word in w2v_candidates}
+            synonym_lemmas = (candidate_lemmas & lexicon_terms) - query_lemmas
+            synonym_forms = {word for word in w2v_candidates if lemmatize(word) in synonym_lemmas}
+            synonym_sources = {
+                key: value for key, value in synonym_sources.items() if key in synonym_lemmas
+            }
+        else:
+            synonym_forms = w2v_candidates & lexicon_terms
+            synonym_sources = {
+                key: value for key, value in synonym_sources.items() if key in synonym_forms
+            }
+    else:
+        synonym_forms = set(w2v_candidates)
+
+    synonyms = synonym_lemmas if lemma_enabled else synonym_forms
+    exact_lemmas = query_lemmas if lemma_enabled else set()
+    terms_forms = set(query_terms) | synonym_forms
+    terms_lemmas = (exact_lemmas | synonym_lemmas) if lemma_enabled else set()
 
     if args.show_terms:
-        expanded = sorted(terms - query_terms)
-        if args.use_lemma and morph is not None:
-            print(f"Query tokens: {', '.join(tokens)}", file=sys.stderr)
-            print(f"Query lemmas: {', '.join(sorted(query_terms))}", file=sys.stderr)
+        print(f"Query tokens: {', '.join(tokens)}", file=sys.stderr)
+        if w2v_candidates:
+            print(
+                f"Word2Vec candidates ({len(w2v_candidates)}): {', '.join(sorted(w2v_candidates))}",
+                file=sys.stderr,
+            )
         else:
-            print(f"Query tokens: {', '.join(tokens)}", file=sys.stderr)
-        if expanded:
-            print(f"Expanded terms ({len(expanded)}): {', '.join(expanded)}", file=sys.stderr)
+            print("Word2Vec candidates: none", file=sys.stderr)
+        if lemma_enabled:
+            if query_lemmas:
+                print(f"Query lemmas: {', '.join(sorted(query_lemmas))}", file=sys.stderr)
+            if synonym_forms:
+                print(
+                    f"Synonym forms ({len(synonym_forms)}): {', '.join(sorted(synonym_forms))}",
+                    file=sys.stderr,
+                )
+        if lexicon_active:
+            if lexicon_terms:
+                print(
+                    f"Lexicon synonyms ({len(lexicon_terms)}): {', '.join(sorted(lexicon_terms))}",
+                    file=sys.stderr,
+                )
+            else:
+                print("Lexicon synonyms: none", file=sys.stderr)
+            if synonyms:
+                print(
+                    f"Filtered synonyms ({len(synonyms)}): {', '.join(sorted(synonyms))}",
+                    file=sys.stderr,
+                )
+            else:
+                print("Filtered synonyms: none", file=sys.stderr)
         else:
-            print("Expanded terms: none", file=sys.stderr)
+            if synonyms:
+                print(f"Synonyms ({len(synonyms)}): {', '.join(sorted(synonyms))}", file=sys.stderr)
+            else:
+                print("Synonyms: none", file=sys.stderr)
         if oov:
             print(f"OOV tokens: {', '.join(oov)}", file=sys.stderr)
         if rare:
             desc = ", ".join(f"{token}({count})" for token, count in rare)
             print(f"Rare tokens (no expansion): {desc}", file=sys.stderr)
-        if lexicon_terms:
-            print(f"Lexicon synonyms ({len(lexicon_terms)}): {', '.join(sorted(lexicon_terms))}", file=sys.stderr)
 
     if args.only_synonyms:
         if synonyms:
@@ -613,23 +665,32 @@ def main() -> int:
                 effective_fields = "text"
             for line in handle:
                 text = format_line(line, effective_fields)
-                if not (token_set(text, morph, args.use_lemma) & terms):
-                    continue
+                if lemma_enabled:
+                    tokens_in_line = [token.lower() for token in iter_alpha_tokens(text)]
+                    if not tokens_in_line:
+                        continue
+                    forms_hit = set(tokens_in_line) & terms_forms
+                    lemmas_hit = {lemmatize(token) for token in tokens_in_line} & terms_lemmas
+                    if not (forms_hit or lemmas_hit):
+                        continue
+                else:
+                    if not (token_set(text) & terms_forms):
+                        continue
                 if args.sentence:
                     matches = sentences_with_terms(
                         text,
-                        terms,
-                        synonyms,
+                        query_terms,
+                        synonym_forms,
+                        synonym_lemmas,
+                        exact_lemmas,
                         synonym_sources,
-                        lexicon_terms,
-                        morph,
-                        args.use_lemma,
                         model,
                         args.context_window,
                         args.context_threshold,
                         args.context_source_threshold,
                         args.context_delta,
                         args.context_min_tokens,
+                        lemmatize,
                     )
                     for sentence, match_token, is_syn in matches:
                         sentence = truncate(sentence, args.max_len)

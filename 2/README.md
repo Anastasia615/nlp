@@ -12,6 +12,7 @@
 - Python 3.10+
 - `gensim` (и совместимый `numpy`)
 - `pymorphy2` или `pymorphy3` (опционально, для лемматизации)
+- `ruwordnet` (опционально, для словарных синонимов)
 
 Минимальная установка:
 
@@ -19,6 +20,13 @@
 python3 -m venv .venv
 source .venv/bin/activate
 pip install gensim numpy
+```
+
+Для словарных синонимов (RuWordNet):
+
+```bash
+pip install ruwordnet
+ruwordnet download
 ```
 
 ## Обучение модели
@@ -80,6 +88,12 @@ python3 mygrep.py data.txt "движение" --model models/news.model --senten
 
 ```bash
 python3 mygrep.py data.txt "привет" --model models/news.model --no-lemma
+```
+
+Для словарных синонимов используется RuWordNet. Отключить можно так:
+
+```bash
+python3 mygrep.py data.txt "привет" --model models/news.model --no-lexicon
 ```
 
 Для редких слов эмбеддинг нестабилен, поэтому по умолчанию синонимы

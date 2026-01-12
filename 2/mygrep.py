@@ -70,6 +70,54 @@ def load_morph(use_morph: bool):
     return None
 
 
+def load_lexicon(use_lexicon: bool):
+    if not use_lexicon:
+        return None
+    try:
+        from ruwordnet import RuWordNet
+    except Exception as exc:
+        print(f"Lexicon disabled: failed to import ruwordnet: {exc}", file=sys.stderr)
+        return None
+    try:
+        return RuWordNet()
+    except FileNotFoundError:
+        print(
+            "Lexicon disabled: RuWordNet database not found. Run: ruwordnet download",
+            file=sys.stderr,
+        )
+        return None
+    except Exception as exc:
+        print(f"Lexicon disabled: failed to initialize RuWordNet: {exc}", file=sys.stderr)
+        return None
+
+
+def lexicon_synonyms(tokens: set[str], lexicon, allow_cross_script: bool, max_per_token: int) -> set[str]:
+    if lexicon is None:
+        return set()
+    synonyms = set()
+    for token in tokens:
+        token_script = script_type(token)
+        added = 0
+        for synset in lexicon.get_synsets(token):
+            for sense in synset.senses:
+                candidate = sense.lemma.lower()
+                parts = tokenize(candidate)
+                if len(parts) != 1:
+                    continue
+                candidate = parts[0]
+                if not allow_cross_script and token_script in {"cyrillic", "latin"}:
+                    if script_type(candidate) != token_script:
+                        continue
+                if candidate != token:
+                    synonyms.add(candidate)
+                    added += 1
+                    if max_per_token and added >= max_per_token:
+                        break
+            if max_per_token and added >= max_per_token:
+                break
+    return synonyms
+
+
 def lemmatize(token: str, morph) -> str:
     if morph is None:
         return token
@@ -145,6 +193,7 @@ def find_match_token(
     terms: set[str],
     synonyms: set[str],
     synonym_sources,
+    lexicon_synonyms,
     morph,
     use_lemma: bool,
     model,
@@ -164,6 +213,10 @@ def find_match_token(
         if lemma not in terms:
             continue
         if lemma in synonyms:
+            if lemma in lexicon_synonyms:
+                if first_syn is None:
+                    first_syn = token
+                continue
             context_vec = context_vector(
                 model,
                 lemmas,
@@ -280,6 +333,18 @@ def parse_args() -> argparse.Namespace:
         help="Disable lemmatization for matching.",
     )
     parser.add_argument(
+        "--no-lexicon",
+        action="store_false",
+        dest="use_lexicon",
+        help="Disable WordNet-based synonyms.",
+    )
+    parser.add_argument(
+        "--lexicon-max",
+        type=int,
+        default=20,
+        help="Maximum number of lexicon synonyms per query token.",
+    )
+    parser.add_argument(
         "--context-window",
         type=int,
         default=5,
@@ -385,6 +450,7 @@ def sentences_with_terms(
     terms: set[str],
     synonyms: set[str],
     synonym_sources,
+    lexicon_synonyms,
     morph,
     use_lemma: bool,
     model,
@@ -404,6 +470,7 @@ def sentences_with_terms(
             terms,
             synonyms,
             synonym_sources,
+            lexicon_synonyms,
             morph,
             use_lemma,
             model,
@@ -443,6 +510,9 @@ def main() -> int:
     if args.context_min_tokens < 0:
         print("Context min tokens must be >= 0.", file=sys.stderr)
         return 1
+    if args.lexicon_max < 0:
+        print("Lexicon max must be >= 0.", file=sys.stderr)
+        return 1
     if args.mutual_topn < 0:
         print("Mutual topn must be >= 0.", file=sys.stderr)
         return 1
@@ -457,7 +527,15 @@ def main() -> int:
         return 1
 
     morph = load_morph(args.use_lemma)
+    wn = load_lexicon(args.use_lexicon)
     query_terms = set(normalize_tokens(tokens, morph, args.use_lemma))
+    lexicon_terms = set(
+        normalize_tokens(
+            list(lexicon_synonyms(query_terms, wn, args.cross_script, args.lexicon_max)),
+            morph,
+            args.use_lemma,
+        )
+    )
 
     model = None
     synonym_sources = {}
@@ -497,6 +575,8 @@ def main() -> int:
         oov = []
 
     synonyms = set(synonym_sources.keys())
+    terms |= lexicon_terms
+    synonyms |= lexicon_terms
 
     if args.show_terms:
         expanded = sorted(terms - query_terms)
@@ -514,6 +594,8 @@ def main() -> int:
         if rare:
             desc = ", ".join(f"{token}({count})" for token, count in rare)
             print(f"Rare tokens (no expansion): {desc}", file=sys.stderr)
+        if lexicon_terms:
+            print(f"Lexicon synonyms ({len(lexicon_terms)}): {', '.join(sorted(lexicon_terms))}", file=sys.stderr)
 
     if args.only_synonyms:
         if synonyms:
@@ -539,6 +621,7 @@ def main() -> int:
                         terms,
                         synonyms,
                         synonym_sources,
+                        lexicon_terms,
                         morph,
                         args.use_lemma,
                         model,

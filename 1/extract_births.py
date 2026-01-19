@@ -58,17 +58,7 @@ def build_parsers():
         rule(name_atom, hyphen, name_atom),
         rule(name_atom, apostrophe, name_atom),
     )
-    particle = or_(
-        rule(caseless("van")),
-        rule(caseless("von")),
-        rule(caseless("de")),
-        rule(caseless("da")),
-        rule(caseless("del")),
-        rule(caseless("la")),
-        rule(caseless("le")),
-        rule(caseless("di")),
-        rule(caseless("du")),
-    )
+
     name_head = name_atom
     name_full = rule(
         name_head,

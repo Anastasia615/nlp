@@ -15,7 +15,7 @@ KEYWORDS_GROUP = (
     r"|выходец\w*|на свет)"
 )
 KEYWORD_RE = re.compile(KEYWORDS_GROUP, re.IGNORECASE)
-LATIN_PARTICLES = {"van", "von", "de", "da", "del", "la", "le", "di", "du"}
+
 
 
 def build_parsers():
